@@ -1,0 +1,213 @@
+---
+title: "NYPD Shooting Incident Data Project"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+This is a breakdown of every shooting incident that occurred in NYC going back to 2006 through the end of the previous calendar year. This data is manually extracted every quarter and reviewed by the Office of Management Analysis and Planning before being posted on the NYPD website. Each record represents a shooting incident in NYC and includes information about the event, the location and time of occurrence. In addition, information related to suspect and victim demographics is also included. This data can be used by the public to explore the nature of shooting/criminal activity. 
+
+
+```{r load tidyverse, message=FALSE, results='hide'}
+## Load tidyverse and lubridate
+library(tidyverse)
+library(lubridate)
+```
+
+
+```{r get_nypd_data, message=FALSE, results='hide'}
+## Get current data in csv file
+url <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+```
+
+```{r read_csv, message=FALSE, results='hide'}
+## Read csv
+nypd_shooting_data <- read_csv(url)
+```
+
+```{r drop_unneeded_columns, message=FALSE, results='hide'}
+## drop unnecessary columns
+nypd_shooting_data <- nypd_shooting_data %>% select (-INCIDENT_KEY, -X_COORD_CD, -Y_COORD_CD, -Latitude, -Longitude, -Lon_Lat)
+```
+
+```{r convert columns to factor variables, message=FALSE, results='hide'}
+## convert columns to factors
+nypd_shooting_data <- nypd_shooting_data %>%
+     mutate_at(vars(BORO, PERP_SEX, VIC_SEX, PERP_AGE_GROUP, 
+                    PERP_RACE, VIC_AGE_GROUP, VIC_RACE), as.factor)
+```
+
+Remove the strange values from data set
+```{r drop inacurate data, results='hide'}
+## Drop inaccurate data
+nypd_shooting_data <- nypd_shooting_data %>%
+  filter(PERP_AGE_GROUP != "(null)")
+
+nypd_shooting_data <- nypd_shooting_data %>%
+  filter(PERP_AGE_GROUP != "1020")
+
+nypd_shooting_data <- nypd_shooting_data %>%
+  filter(PERP_AGE_GROUP != "1028")
+
+nypd_shooting_data <- nypd_shooting_data %>%
+  filter(PERP_AGE_GROUP != "224")
+
+nypd_shooting_data <- nypd_shooting_data %>%
+  filter(PERP_AGE_GROUP != "940")
+
+nypd_shooting_data <- nypd_shooting_data %>%
+  filter(PERP_SEX != "(null)")
+
+nypd_shooting_data <- nypd_shooting_data %>%
+  filter(PERP_RACE != "(null)")
+
+nypd_shooting_data <- nypd_shooting_data %>%
+  filter(PERP_RACE != "1022")
+
+nypd_shooting_data <- nypd_shooting_data %>%
+  filter(VIC_AGE_GROUP != "1022")
+
+```
+
+
+```{r change date column to date type, result='hide'}
+## convert date to date type 
+nypd_shooting_data <- nypd_shooting_data %>%
+     mutate(OCCUR_DATE = mdy(OCCUR_DATE))
+```
+
+```{r drop unnecessary column, message=FALSE, results='hide'}
+## drop jurisdiction code
+nypd_shooting_data <- nypd_shooting_data %>% select (-JURISDICTION_CODE)
+```
+
+## Summary
+
+```{r print summary,}
+## Summary of data
+print(summary(nypd_shooting_data))
+```
+
+```{r create shooting 2023, results='hide'}
+## create shootings variable for 2023
+shootings_2023 <- nypd_shooting_data[nypd_shooting_data$OCCUR_DATE
+                                     >= "2023-01-01" &
+                                         nypd_shooting_data$OCCUR_DATE
+                                     <= "2023-12-31", ]
+```
+
+```{r create 2023 shooting count df, results='hide'}
+## create count variable of shootings in 2023
+count_df <- data.frame(date = unique(shootings_2023$OCCUR_DATE), 
+                       count = sapply(unique(shootings_2023$OCCUR_DATE), 
+                                      function(x) 
+                                          sum(shootings_2023$OCCUR_DATE == x)))
+```
+
+
+## *This visualization charts shootings for the year of 2023*
+
+We can see a bit of seasonality in the shootings, with
+the peak times earlier in the year, and mid summer. Towards
+the end of the year there are less shootings in comparison
+to those two time points.
+
+```{r Shootings in 2023, results='hide'}
+## Plot Shootings in 2023
+ggplot(count_df, aes(x = date, y = count)) +
+    geom_line(color = "cadetblue4") +
+    labs(title = "Shootings Over Time (2023)") +
+    xlab("Date") +
+    ylab("Count") +
+    theme_classic()
+```
+
+```{r count murders by borough, results='hide'}
+## Count murders by borough
+murders_df <- nypd_shooting_data[nypd_shooting_data$STATISTICAL_MURDER_FLAG == TRUE, ]
+murder_counts <- table(murders_df$BORO )
+```
+
+## *This visualization charts the number of murders going back to 2006 by borough*
+
+```{r visulization by borough, results='hide'}
+## Plot murders going back to 2006
+ggplot(data.frame(borough = names(murder_counts), count = as.vector(murder_counts)),
+      aes(x = borough, y = count)) +
+      geom_bar(stat = "identity", fill = "cadetblue4") +
+      labs(title = "Number of Murders by Borough", x = "Borough", y = "Number of Murders") +
+  theme_classic()
+```
+
+```{r get minor data, results='hide'}
+## Get minor counts who committed shootings
+minors_df <- nypd_shooting_data[nypd_shooting_data$PERP_AGE_GROUP == "<18", ]
+minor_counts <- table(minors_df$BORO )
+```
+
+## *This visualization shows the number of minor offenders (Age < 18) by Borough*
+
+```{r minor offendors, results='hide'}
+## Plot minor offenders (who commited shootings)
+ggplot(data.frame(borough = names(minor_counts), count = as.vector(minor_counts)),
+        aes(x = borough, y = count)) +
+     geom_bar(stat = "identity", fill = "cadetblue4") +
+     labs(title = "Number of Minor Offenders by Borough", x = "Borough", y = "Number of Minor Offendors") +
+     theme_classic()
+```
+
+```{r convert murder flag to binary valule, results='hide'}
+## Convert murder flag to binary values, 0 and 1
+nypd_shooting_data$STATISTICAL_MURDER_FLAG <- as.numeric(nypd_shooting_data$STATISTICAL_MURDER_FLAG)
+
+```
+
+## *This model shows which category variables are statistically significant in a shooting being a murder*
+
+This model uses logistic regression, where the murder flag is converted to binary
+outcomes of 0 and 1, and PERP_AGE_GROUP, PERP_SEX, PERP_RACE, VIC_AGE_GROUP, 
+VIC_SEX, VIC_RACE, BORO, and PRECINCT are used as predictor variables
+
+```{r create logistic regression model, results='hide'}
+## Create logistic regression model
+model = glm(formula = STATISTICAL_MURDER_FLAG ~ PERP_AGE_GROUP + PERP_SEX + 
+    PERP_RACE + VIC_AGE_GROUP + VIC_SEX + VIC_RACE + BORO + PRECINCT, 
+    family = binomial, data = nypd_shooting_data)
+```
+
+```{r show output from model}
+## Print model output
+summary(model)
+```
+
+## *Model Analysis*
+
+A statistically significant predictor variable for the outcome of shooting being a murder is a low p-value (typically less than 0.05). In the Pr(>|z|) column we can see that perpetrator age groups within the ages of 25-64 are statistically significant. Additionally, victim age groups between the ages of 18-64 are statistically significant. Finally, the borough of Brooklyn suggests a relationship with the dependent variable (if a shooting was a murder), with a p-value of about ~0.23. 
+
+## *Additional Analysis Follow-ups*
+
+Some additional data points that would be helpful for analysis would be population
+data. That would help us determine the per capita murder rate by borough. 
+This would give us a better apples to apples type of comparison. Additionally, we
+might want to do some correlation analysis with economic data. More than likely
+the high shooting rates have a positive correlation with low income areas. Additional
+time series analysis can be done to determine if indeed there is a seasonality to 
+shootings. 
+
+## *Conclusion*
+
+It is safe to say that there is so much additional analysis that can be done with
+this data set. From analyzing the gender of the perpetrators and the victims, investigating correlations within the variables, and even time of day analysis for
+shootings. That would be just the tip of the iceberg. 
+
+I definitely had biases in my mind when evaluating this data set. I immediately
+thought that socio-economic factors were driving these shootings, and thought
+about how the lack of economic opportunity would be correlated with these shootings
+and locations. I can see how this sort of bias would lead me to create a predefined
+narrative for the analysis of this shooting data, instead of trying to be as objective
+as possible with the analysis. There is also an element of pre-judgement going on for
+me in the sense that I have already put into my mind which boroughs would have the
+higher rates of murder based off of news events I've seen. 
+
+In terms of mitigating my biases, it's possible that I could of used a different model (clustering around precincts) as apposed to using borough names within logistic regression. This would maybe give me more of an objective approach. Another way to mitigate my bias would be to approach the analysis by strictly looking for patterns or trends that the general public might be interested in. This would be a more informative summary of the data that would be beneficial for a larger audience. 
+
